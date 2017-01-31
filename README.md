@@ -254,11 +254,11 @@ CREATE TABLE names (
 ````
 
 tags wanted:
-    - anything that starts with 'name:'
-    - iata (airport code)
-    - short_name
-    - alt_name
-    - official_name
-    - old_name
-    - ref (abbreviation for state/province)
-    - ISO3166-1 (country abbreviation)
+  + anything that starts with `name:`
+  + `iata` (airport code)
+  + `short_name`
+  + `alt_name`
+  + `official_name`
+  + `old_name`
+  + `ref` (abbreviation for state/province)
+  + `ISO3166-1` (country abbreviation)
