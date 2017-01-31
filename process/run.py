@@ -37,7 +37,7 @@ def is_valid_tag(tag):
     return False
 
 
-cursor.execute('SELECT osm_id, name, tags FROM place_polygons_grouped LIMIT 50')
+cursor.execute('SELECT osm_id, name, tags FROM place_polygons_grouped ORDER BY name ASC')
 
 for place in cursor:
     new_tags = {}
@@ -51,16 +51,16 @@ for place in cursor:
     else:
         new_name = place['name']
 
-    print place, new_tags
+    print place["name"]
     update_cursor.execute("""
         INSERT INTO places (osm_id, name, admin_level, boundary, nature, tourism, waterway, leisure, geological, names, geom)
-        SELECT osm_id, %(name)s, admin_level::int, boundary, \"natural\", tourism, waterway, leisure, geological, %(hstore)s, geom
+        SELECT osm_id, %(name)s, admin_level::int, boundary, \"natural\", tourism, waterway, leisure, geological, %(hstore)s, ST_MakeValid(geom)
         FROM place_polygons_grouped
         WHERE osm_id = %(osm_id)s
         RETURNING place_id
     """, {
         "osm_id": place["osm_id"],
-        "name": new_name,
+        "name": new_name.replace('"', ''),
         "hstore": new_tags
     })
 
@@ -81,7 +81,7 @@ for place in cursor:
             "place_id": place_id,
             "type": name_type,
             "lang": lang,
-            "name": value
+            "name": value.replace('"', '')
         })
     connection.commit()
 

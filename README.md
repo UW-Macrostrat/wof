@@ -188,16 +188,23 @@ CREATE TABLES places (
 );
 
 CREATE TABLE places (
-  place_id uuid primary key default uuid_generate_v4(),
-  osm_id bigint,
-  name text,
-  abbrev text,
-  boundary text,
-  geom geometry
-)
+    place_id serial primary key not null,
+    osm_id bigint not null,
+    name text not null,
+    admin_level integer,
+    boundary text,
+    nature text,
+    tourism text,
+    waterway text,
+    leisure text,
+    geological text,
+    names hstore,
+    geom geometry not null
+);
+
 
 CREATE TABLE names (
-  place_id integer not null primary key,
+  place_id integer not null,
   type text,
   lang text,
   name text
