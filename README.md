@@ -6,11 +6,7 @@ While this is hardly a novel concept (see EarthCube, UW version of EarthCube), i
 
 In contrast to the [named-entity recognition](https://en.wikipedia.org/wiki/Named-entity_recognition) done by [Stanford CoreNLP](http://stanfordnlp.github.io/CoreNLP/), these entity tags come with hierarchies and links to authoritative databases for further exploration. This hierarchy allows us to increase precision of tags by leveraging hierarchy to remove ambiguity. For example, if the place "Springfield" is present and there are 50 matches, we can use the presence of other terms in the text to disambiguate which Springfield is being referenced.
 
-
-http://planet.osm.org
-http://planet.osm.org/pbf/planet-170116.osm.pbf
-
-md5 - eaedcb7528c9130846fa0f40fa718e93  planet-170116.osm.pbf
+[The data](http://planet.osm.org/pbf/planet-170116.osm.pbf) (`md5 - eaedcb7528c9130846fa0f40fa718e93 `) was downloaded on 2017-01-23 from http://planet.osm.org.
 
 ````shell
 sudo apt-get update
@@ -24,11 +20,19 @@ sudo apt-get update
 sudo apt-get install postgresql-9.5-postgis-2.2 postgresql-contrib-9.5
 ````
 
+````shell
 vi /etc/postgresql/9.5/main/pg_hba.conf
-< trust everything>
+````
 
+trust everything (safe for our purposes....)
+
+````shell
 vi /etc/postgresql/9.5/main/postgresql.conf
+````
 
+Update the follow configuration parameters. Your specific values may differ depending on the system configuration. Enter your system information in to [pgtune](http://pgtune.leopard.in.ua) for an estimate of proper values for your system.
+
+```
 data_directory = '/var/lib/postgresql/9.5/main'
 data_directory = '/data/postgresql/main'
 max_connections = 20
@@ -41,22 +45,53 @@ max_wal_size = 8GB
 checkpoint_completion_target = 0.9
 effective_cache_size = 10GB
 default_statistics_target = 500
+````
 
+On CCI we need to move Postgres's data directory to the large attached volume.
+
+````shell
 mkdir /data/postgresql/main
 mv -f /var/lib/postgresql/9.5/main /data/postgresql/main
 sudo chown -R postgres:postgres /data/postgresql/main
 
 sudo service postgresql restart
+````
 
+Time to download the data! It will be about 36GB and take anywhere for 10 minutes to 3 hours to download.
+
+````shell
 mkdir /data/osm
 cd /data/osm
 curl -o planet.osm.pbf http://planet.osm.org/pbf/planet-latest.osm.pbf
+````
 
+Next, create a database to hold the data and import it. `osm2pgsql` took 58 hours to complete this task.
+
+````shell
 createdb -U postgres gill
-psql -U postgres fill -c "CREATE EXTENSION postgis; CREATE EXTENSION hstore;"
+psql -U postgres gill -c "CREATE EXTENSION postgis; CREATE EXTENSION hstore;"
 
 osm2pgsql -d osm -U postgres -k -s -C 22000 planet.osm.pbf
+````
 
+Once imported, create subsets of the data that we are interested in. The following criteria must be met:
+
++ `name` is not `NULL`
++ `shop` is `NULL`
++ `building` is `NULL`
+
+Additionally, at least one of the following conditions must be met:
+
++ `admin_level` in ['2', '3', '4', '5', '6', '7', '8', '9', '10']
++ natural IN ['water', 'bay', 'lagoon', 'lake', 'marsh', 'natural', 'reservoir', 'river', 'glacier', 'beach', 'coastline', 'spring', 'hot_spring', 'geyser', 'peak', 'volcano', 'valley', 'ridge', 'arete', 'cliff', 'saddle', 'rock', 'stone', 'sinkhole'] OR IS NULL
++ `tourism` = 'viewpoint' or is `NULL`
++ `waterway` in ['river', 'stream', 'canal', 'dam', 'waterfall']
++ `boundary` IN ['administrative', 'historic', 'national_park', 'protected_area']
++ `geological` IN ['moraine', 'outcrop', 'paleontological_site']
+
+
+
+````sql
 CREATE TABLE places_polygons AS
 SELECT
   osm_id,
@@ -134,74 +169,81 @@ WHERE
   tags->'geological' IS NOT NULL OR
   leisure = 'park' OR
   admin_level IN ('2', '3', '4', '5', '6', '7', '8', '9', '10', NULL));
+````
 
+If you want to move this extract to a different machine for further processing, you can dump it as so:
 
-pg_dump -x -c -O -t places_polygons -t places_points -t places_lines -U postgres osm | gzip > osm_subset.sql.gz
-scp -p 2200 osm_subset.sql.gz jczaplewski@teststrata.geology.wisc.edu:/Users/jczaplewski
-gunzip < osm_subset.sql.gz | psql -U john gill
+````shell
+pg_dump -x -c -O -t places_polygons -t places_points -t places_lines -U postgres gill | gzip > osm_subset.sql.gz
+````
 
-UPDATE places_polygons SET geom = ST_Transform(ST_Union(geom), 4326) GROUP BY osm_id;
+Next, condense the polygon layer
 
+````sql
 CREATE TABLE place_polygons_grouped AS
-SELECT osm_id,
-name,
-boundary,
-admin_level,
-"natural",
-tourism,
-waterway,
-leisure,
-geological,
-tags,
-ST_Transform(ST_Union(geom), 4326) AS geom
+SELECT
+  osm_id,
+  name,
+  boundary,
+  admin_level,
+  "natural",
+  tourism,
+  waterway,
+  leisure,
+  geological,
+  tags,
+  ST_Transform(ST_Union(geom), 4326) AS geom
 FROM places_polygons
-GROUP BY osm_id, name,
-boundary,
-admin_level,
-"natural",
-tourism,
-waterway,
-leisure,
-geological,
-tags;
+GROUP BY
+  osm_id,
+  name,
+  boundary,
+  admin_level,
+  "natural",
+  tourism,
+  waterway,
+  leisure,
+  geological,
+  tags;
 
-create index on place_polygons_grouped using gist (geom);
+CREATE INDEX ON place_polygons_grouped USING gist (geom);
+````
 
+Create tables to store processed data:
 
-CREATE TABLES places (
-  place_id uuid primary key default uuid_generate_v4(),
-  osm_id bigint,
+````sql
+CREATE TABLES lookup_places (
+  place_id integer not null,
   name text,
   type text,
-  admin-1 uuid,
-  admin-2 uuid,
-  admin-3 uuid,
-  admin-4 uuid,
-  admin-5 uuid,
-  admin-6 uuid,
-  admin-7 uuid,
-  admin-8 uuid,
-  admin-9 uuid,
-  admin-10 uuid,
+  admin1 integer,
+  admin2 integer,
+  admin3 integer,
+  admin4 integer,
+  admin5 integer,
+  admin6 integer,
+  admin7 integer,
+  admin8 integer,
+  admin9 integer,
+  admin10 integer,
   tags hstore,
   geom geometry
 );
 
 CREATE TABLE places (
-    place_id serial primary key not null,
-    osm_id bigint not null,
-    name text not null,
-    admin_level integer,
-    boundary text,
-    nature text,
-    tourism text,
-    waterway text,
-    leisure text,
-    geological text,
-    names hstore,
-    geom geometry not null
+  place_id serial primary key not null,
+  osm_id bigint not null,
+  name text not null,
+  admin_level integer,
+  boundary text,
+  nature text,
+  tourism text,
+  waterway text,
+  leisure text,
+  geological text,
+  names hstore,
+  geom geometry not null
 );
-
 
 CREATE TABLE names (
   place_id integer not null,
@@ -209,78 +251,14 @@ CREATE TABLE names (
   lang text,
   name text
 );
-
-# DROP TABLE planet_osm_roads
-# tags wanted:
-#    - anything that starts with 'name:'
-#    - iata (airport code)
-#    - short_name
-#    - alt_name
-#    - official_name
-#    - old_name
-#    - ref (abbreviation for state/province)
-#    - ISO3166-1 (country abbreviation)
-
-
-
-# Ignore all admin_level = '0' and '1'
-
-# If 'name' contains 'Town/Village/City of' and no official name, set official_name = name and replace the bullshit
-# Create new name column with Replace of 'Town/Village/City of' with nothing
-
-# natural IN ['water', 'bay', 'lagoon', 'lake', 'marsh', 'natural', 'reservoir', 'river', 'glacier', 'beach', 'coastline', 'spring', 'hot_spring', 'geyser', 'peak', 'volcano', 'valley', 'ridge', 'arete', 'cliff', 'saddle', 'rock', 'stone', 'sinkhole'] OR IS NULL
-
-# tourism = 'viewpoint' OR IS NULL
-
-# shop is NULL
-# building is null
-
-# waterway IN ['river', 'stream', 'canal', 'dam', 'waterfall'] OR IS NULL
-
-# boundary IN ['administrative', 'historic', 'national_park', 'protected_area'] OR IS NULL
-
-# geological IN ['moraine', 'outcrop', 'paleontological_site'] OR IS NULL
-
-
-# For each,
-
-````sql
-CREATE TABLE places AS
-SELECT *
-FROM planet_osm_polygon
-WHERE
-  name IS NOT NULL AND
-  shop IS NULL AND
-  building IS NULL AND
-  ("natural" IN ('water', 'bay', 'lagoon', 'lake', 'marsh', 'natural', 'reservoir', 'river', 'glacier', 'beach', 'coastline', 'spring', 'hot_spring', 'geyser', 'peak', 'volcano', 'valley', 'ridge', 'arete', 'cliff', 'saddle', 'rock', 'stone', 'sinkhole') OR
-  tourism = 'viewpoint' OR
-  waterway IN ('river', 'stream', 'canal', 'dam', 'waterfall') OR
-  boundary IN ('administrative', 'historic', 'national_park', 'protected_area') OR
-  tags->'geological' IS NOT NULL OR
-  leisure = 'park' OR
-  admin_level IN ('2', '3', '4', '5', '6', '7', '8', '9', '10', NULL));
-
-
-
-CREATE TABLE places (
-    place_id serial primary key not null,
-    osm_id bigint not null,
-    name text not null,
-    admin_level integer,
-    boundary text,
-    nature text,
-    tourism text,
-    waterway text,
-    leisure text,
-    geological text,
-    names hstore,
-    geom geometry not null
-);
-
-CREATE TABLE place_names (
-    place_id integer not null,
-    name text not null,
-    lang text
-);
-CREATE INDEX ON place_names (place_id);
 ````
+
+tags wanted:
+    - anything that starts with 'name:'
+    - iata (airport code)
+    - short_name
+    - alt_name
+    - official_name
+    - old_name
+    - ref (abbreviation for state/province)
+    - ISO3166-1 (country abbreviation)
