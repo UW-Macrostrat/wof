@@ -54,7 +54,7 @@ for place in cursor:
     print place["name"]
     update_cursor.execute("""
         INSERT INTO places (osm_id, name, admin_level, boundary, nature, tourism, waterway, leisure, geological, names, geom)
-        SELECT osm_id, %(name)s, admin_level::int, boundary, \"natural\", tourism, waterway, leisure, geological, %(hstore)s, ST_MakeValid(geom)
+        SELECT osm_id, %(name)s, admin_level, boundary, \"natural\", tourism, waterway, leisure, geological, %(hstore)s, ST_MakeValid(geom)
         FROM place_polygons_grouped
         WHERE osm_id = %(osm_id)s
         RETURNING place_id
