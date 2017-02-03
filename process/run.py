@@ -37,7 +37,7 @@ def is_valid_tag(tag):
     return False
 
 
-cursor.execute('SELECT osm_id, name, tags FROM place_polygons_grouped ORDER BY name ASC')
+cursor.execute('SELECT osm_id, name, tags FROM place_polygons_grouped WHERE osm_id NOT IN (select distinct osm_id FROM places) ORDER BY name ASC')
 
 for place in cursor:
     new_tags = {}
