@@ -4,7 +4,7 @@ CREATE EXTENSION postgis;
 CREATE EXTENSION hstore;
 
 CREATE TABLE places (
-  wof_id integer NOT NULL PRIMARY KEY, /* wof:id */
+  wof_id integer NOT NULL, /* wof:id */
   name text NOT NULL, /* wof:name */
   name_formal text /* ne:formal_en */,
   placetype text, /* wof:placetype */
@@ -19,6 +19,7 @@ CREATE TABLE places (
   geom geometry
 );
 
+CREATE INDEX ON places (wof_id);
 CREATE INDEX ON places (name);
 CREATE INDEX ON places (continent);
 CREATE INDEX ON places (country);
