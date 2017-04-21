@@ -57,7 +57,7 @@ sudo chown -R postgres:postgres /data/postgresql/main
 sudo service postgresql restart
 ````
 
-Time to download the data! It will be about 36GB and take anywhere for 10 minutes to 3 hours to download.
+Time to download the data! It will be about 36GB and take anywhere from 10 minutes to 3 hours to download.
 
 ````shell
 mkdir /data/osm
